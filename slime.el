@@ -1300,7 +1300,6 @@ See `slime-start'."
     (format "%S\n\n"
             `(progn
                (load ,(expand-file-name loader) :verbose t)
-               (funcall (read-from-string "swank-loader:init"))
                (funcall (read-from-string "swank:start-server")
                         ,port-filename
                         :coding-system ,encoding)))))
