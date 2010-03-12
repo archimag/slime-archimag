@@ -2778,12 +2778,15 @@ Record compiler notes signalled as `compiler-condition's."
   "Load the module MODULE."
   (dolist (module (if (listp modules) modules (list modules)))
     (unless (member (string module) *modules* :test #'string=)
-      (require module (if filename
-                          (filename-to-pathname filename)
-                          (module-filename module)))))
+      (let ((*load-print* nil)
+            (*load-verbose* nil)
+            #+cmu (ext:*gc-verbose* nil))
+        (require module (if filename
+                            (filename-to-pathname filename)
+                            (module-filename module))))))
   *modules*)
 
-(defvar *find-module* 'find-module
+(defvar *find-module* 'find-module-gentoo
   "Pluggable function to locate modules.
 The function receives a module name as argument and should return
 the filename of the module (or nil if the file doesn't exist).")
@@ -2813,6 +2816,21 @@ the filename of the module (or nil if the file doesn't exist).")
     (some (lambda (dir) (some #'probe-file (module-canditates name dir)))
           *load-path*)))
 
+(defun swank-fasl-pathname ()
+  (make-pathname :name nil :type nil
+                 :defaults (car (asdf:output-files
+                                 (make-instance 'asdf:compile-op)
+                                 (car (asdf:module-components
+                                       (asdf:find-system :swank)))))))
+
+(defun append-dir (pathname dir)
+  (make-pathname :directory (append (pathname-directory pathname) dir)))
+
+(defun find-module-gentoo (module)
+  (or (let ((*load-path* (list (append-dir (swank-fasl-pathname) '("contrib"))
+                               (append-dir swank-loader:*source-directory* '("contrib")))))
+        (find-module module))
+      (find-module module)))
 
 ;;;; Macroexpansion
 
