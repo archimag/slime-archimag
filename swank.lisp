@@ -25,6 +25,9 @@
            #:invoke-slime-debugger
            #:swank-debugger-hook
            #:emacs-inspect
+           #:add-hook
+           #:*new-connection-hook*
+           #:*connection-closed-hook*
            ;;#:inspect-slot-for-emacs
            ;; These are user-configurable variables:
            #:*communication-style*
