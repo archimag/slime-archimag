@@ -1045,6 +1045,15 @@ See `slime-lisp-implementations'")
                          (slime-lisp-options command))
                         (t (slime-read-interactive-args))))))
 
+(defmacro define-slime-lisp (lisp path &optional coding)
+  (let ((funname (intern (format "%s-slime" lisp))))
+    `(defun ,funname ()
+       (interactive)
+       (slime ,path (or ,coding 'utf-8-unix)))))
+       ;; (let ((inferior-lisp-program ,path)
+       ;;       (slime-net-coding-system (or ,coding 'utf-8-unix)))
+;;(slime)))))
+
 (defvar slime-inferior-lisp-program-history '()
   "History list of command strings.  Used by `slime'.")
                                                   
