@@ -44,6 +44,15 @@
 (make-variable-buffer-local
  (defvar slime-presentation-start-to-point (make-hash-table)))
 
+(setq slime-inspector-value-provider
+      (lambda ()
+        (multiple-value-bind (presentation start end)
+            (slime-presentation-around-point (point))
+          (when presentation
+            ;; Point is within a presentation, so don't prompt, just
+            ;; inspect the presented object; don't play DWIM.
+            (slime-presentation-expression presentation)))))
+
 (defun slime-mark-presentation-start (id &optional target)
   "Mark the beginning of a presentation with the given ID.
 TARGET can be nil (regular process output) or :repl-result."

@@ -6345,11 +6345,15 @@ was called originally."
 (defvar slime-inspector-mark-stack '())
 (defvar slime-saved-window-config)
 
+(defvar slime-inspector-value-provider nil)
+
 (defun slime-inspect (string)
   "Eval an expression and inspect the result."
   (interactive 
-   (list (slime-read-from-minibuffer "Inspect value (evaluated): "
-				     (slime-sexp-at-point))))
+   (list (or (and slime-inspector-value-provider
+                  (funcall slime-inspector-value-provider))
+             (slime-read-from-minibuffer "Inspect value (evaluated): "
+                                         (slime-sexp-at-point)))))
   (slime-eval-async `(swank:init-inspector ,string) 'slime-open-inspector))
 
 (define-derived-mode slime-inspector-mode fundamental-mode "Slime-Inspector"
