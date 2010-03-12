@@ -1,39 +1,88 @@
-;;; -*- lisp -*-
+;;; -*- mode: lisp; syntax: common-lisp; package: common-lisp; indent-tabs-mode: nil -*-
 
-;; ASDF system definition for loading the Swank server independently
-;; of Emacs.
-;;
-;; This is only useful if you want to start a Swank server in a Lisp
-;; processes that doesn't run under Emacs. Lisp processes created by
-;; `M-x slime' automatically start the server.
+(defpackage #:swank-system
+  (:use #:common-lisp #:asdf))
 
-;; Usage:
-;;
-;;   (require :swank)
-;;   (swank:create-swank-server PORT) => ACTUAL-PORT
-;;
-;; (PORT can be zero to mean "any available port".)
-;; Then the Swank server is running on localhost:ACTUAL-PORT. You can
-;; use `M-x slime-connect' to connect Emacs to it.
-;;
-;; This code has been placed in the Public Domain.  All warranties
-;; are disclaimed.
+(in-package #:swank-system)
 
-(defpackage :swank-loader
-  (:use :cl))
+(defun load-user-init-file ()
+  "Load the user init file, return NIL if it does not exist."
+  (load (merge-pathnames (user-homedir-pathname)
+                         (make-pathname :name ".swank" :type "lisp"))
+        :if-does-not-exist nil))
 
-(in-package :swank-loader)
+(defun load-site-init-file ()
+  (load (make-pathname :name "site-init" :type "lisp"
+                       :defaults (truename
+                                  (asdf:system-definition-pathname
+                                   (asdf:find-system :swank))))
+        :if-does-not-exist nil))
 
-(defclass swank-loader-file (asdf:cl-source-file) ())
+(defclass no-load-file (cl-source-file) ())
 
-;;;; after loading run init
+(defmethod perform ((op load-op) (c no-load-file)) nil)
 
-(defmethod asdf:perform ((o asdf:load-op) (f swank-loader-file))
-  (load (asdf::component-pathname f))
-  (funcall (read-from-string "swank-loader::init")
-           :reload (asdf::operation-forced o)
-           :delete (asdf::operation-forced o)))
+(defmacro define-swank-system (sysdep-files)
+  `(defsystem swank
+     :name "Swank is the Common Lips back-end to SLIME"
+     :serial t
+     :components ((:file "swank-backend")
+                  (:file "nregex")
+                  ,@(mapcar #'(lambda (component)
+                                (if (atom component)
+                                    (list :file component)
+                                    component))
+                            sysdep-files)
+                  (:file "swank-match")
+                  (:file "swank-rpc")
+                  (:file "swank")
+                  (:module "contrib"
+                   :components ((:no-load-file "swank-c-p-c")
+                                (:no-load-file "swank-arglists" :depends-on ("swank-c-p-c"))
+                                (:no-load-file "swank-asdf")
+                                (:no-load-file "swank-clipboard")
+                                (:no-load-file "swank-fancy-inspector")
+                                (:no-load-file "swank-fuzzy" :depends-on ("swank-c-p-c"))
+                                (:no-load-file "swank-hyperdoc")
+                                (:no-load-file "swank-indentation")
+                                (:no-load-file "swank-listener-hooks")
+                                (:no-load-file "swank-motd")
+                                (:no-load-file "swank-package-fu")
+                                (:no-load-file "swank-presentations")
+                                (:no-load-file "swank-presentation-streams" :depends-on ("swank-presentations"))
+                                (:no-load-file "swank-sbcl-exts" :depends-on ("swank-arglists"))
+                                (:no-load-file "swank-snapshot")
+                                (:no-load-file "swank-sprof"))))
+     :depends-on (#+sbcl sb-bsd-sockets)
+     :perform (load-op :after (op swank)
+                       (load-site-init-file)
+                       (load-user-init-file))))
 
-(asdf:defsystem :swank
-  :default-component-class swank-loader-file
-  :components ((:file "swank-loader")))
+#+(or cmu scl sbcl openmcl clozurecl lispworks allegro clisp armedbear cormanlisp ecl)
+(define-swank-system
+  #+cmu (swank-source-path-parser swank-source-file-cache swank-cmucl)
+  #+scl (swank-source-path-parser swank-source-file-cache swank-scl)
+  #+sbcl (swank-source-path-parser swank-source-file-cache swank-sbcl swank-gray)
+  #+(or openmcl clozurecl) (metering swank-openmcl swank-gray)
+  #+lispworks (swank-lispworks swank-gray)
+  #+allegro (swank-allegro swank-gray)
+  #+clisp (xref metering swank-clisp swank-gray)
+  #+armedbear (swank-abcl)
+  #+cormanlisp (swank-corman swank-gray)
+  #+ecl (swank-source-path-parser swank-source-file-cache swank-ecl swank-gray))
+
+#-(or cmu scl sbcl openmcl clozurecl lispworks allegro clisp armedbear cormanlisp ecl)
+(error "Your CL implementation is not supported !")
+
+(defpackage #:swank-loader
+  (:use #:common-lisp)
+  (:export #:*source-directory*))
+
+(in-package #:swank-loader)
+
+(defparameter *source-directory*
+  (asdf:component-pathname (asdf:find-system :swank)))
+
+;; (funcall (intern (string :warn-unimplemented-interfaces) :swank-backend))
+
+;; swank.asd ends here
