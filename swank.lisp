@@ -3226,11 +3226,13 @@ DSPEC is a string and LOCATION a source location. NAME is a string."
   (setq *istate* nil
         *inspector-history* (make-array 10 :adjustable t :fill-pointer 0)))
   
-(defslimefun init-inspector (string)
-  (with-buffer-syntax ()
-    (with-retry-restart (:msg "Retry SLIME inspection request.")
-      (reset-inspector)
-      (inspect-object (eval (read-from-string string))))))
+(defslimefun init-inspector (obj)
+  (with-retry-restart (:msg "Retry SLIME inspection request.")
+    (reset-inspector)
+    (if (stringp obj)
+        (with-buffer-syntax ()
+          (inspect-object (eval (read-from-string obj))))
+        (inspect-object obj))))
 
 (defun ensure-istate-metadata (o indicator default)
   (with-struct (istate. object metadata-plist) *istate*
