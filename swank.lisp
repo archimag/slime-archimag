@@ -3221,7 +3221,7 @@ DSPEC is a string and LOCATION a source location. NAME is a string."
   next previous)
 
 (defvar *istate* nil)
-(defvar *inspector-history*)
+(defvar *inspector-history* (make-array 10 :adjustable t :fill-pointer 0))
 
 (defun reset-inspector ()
   (setq *istate* nil
