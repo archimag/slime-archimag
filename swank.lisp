@@ -25,6 +25,7 @@
            #:invoke-slime-debugger
            #:swank-debugger-hook
            #:emacs-inspect
+           #:defslimefun
            #:add-hook
            #:*new-connection-hook*
            #:*connection-closed-hook*
