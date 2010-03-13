@@ -3229,10 +3229,10 @@ DSPEC is a string and LOCATION a source location. NAME is a string."
 (defslimefun init-inspector (obj)
   (with-retry-restart (:msg "Retry SLIME inspection request.")
     (reset-inspector)
-    (if (stringp obj)
-        (with-buffer-syntax ()
-          (inspect-object (eval (read-from-string obj))))
-        (inspect-object obj))))
+    (inspect-object (if (stringp obj)
+                        (with-buffer-syntax ()
+                          (eval (read-from-string obj)))
+                        obj))))
 
 (defun ensure-istate-metadata (o indicator default)
   (with-struct (istate. object metadata-plist) *istate*
