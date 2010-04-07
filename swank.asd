@@ -74,6 +74,13 @@
 #-(or cmu scl sbcl openmcl clozurecl lispworks allegro clisp armedbear cormanlisp ecl)
 (error "Your CL implementation is not supported !")
 
+(defmethod asdf:perform :after ((o asdf:load-op) (swank (eql (asdf:find-system :swank))))
+  (setf (symbol-value (read-from-string "swank::*swank-wire-protocol-version*"))
+        (with-open-file (s (merge-pathnames "ChangeLog"
+                                            (asdf:component-pathname swank))
+                           :if-does-not-exist nil)
+          (and s (symbol-name (read s))))))
+
 (defpackage #:swank-loader
   (:use #:common-lisp)
   (:export #:*source-directory*))
