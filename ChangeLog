@@ -1,3 +1,192 @@
+2010-04-06  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-create-compilation-log): Enable
+	compilation-mode, which was enabled previously by
+	slime-insert-compilation-log.
+
+2010-04-05  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-doc-bindings): Move slime-apropos to C-c C-d A,
+	C-c C-d a will be bound to slime-autodoc-manually.
+
+	* doc/slime.texi: Document the above change.
+
+2010-04-05  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el: Some further adaptations to the new slime-with-popup-buffer.
+
+2010-04-04  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-insert-threads): Use header-line-format only when
+	it's present (XEmacs doesn't support it).
+
+2010-04-04  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-with-popup-buffer): Make &optional parameters
+	&key parameters, add modes parameter.
+	slime-with-popup-buffer sets up some buffer local variables,
+	but enabling major modes kills all buffer locals, so modes should
+	be enabled before setting them.
+	Adopt changes to slime-with-popup-buffer where needed.
+	This fixes several bugs with popup buffers on non-default connections.
+
+2010-04-03  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-update-threads-buffer): New formatting, with labels
+	and additional information provided by the backend.
+	* swank-allegro.lisp (thread-attributes): Move process-priority from
+	thread-status.
+
+2010-03-29  Helmut Eller  <heller@common-lisp.net>
+
+	* slime.el: Add gud as compile-time dependency.
+
+2010-03-29  Helmut Eller  <heller@common-lisp.net>
+
+	Compile swank-sbcl-exts only for SBCL.
+
+	* swank-loader.lisp (*contribs*): Add #+sbcl.
+
+2010-03-29  Helmut Eller  <heller@common-lisp.net>
+
+	Minor cleanups
+
+	* swank.lisp (connection): Make socket-io read-only again.
+	(*connections*): Move declaration before first use.
+	(finish-connection-setup): Merged into make-connection.
+	(accept-connections): Renamed from serve-connection and
+	reorganized so that the socket-io slot can be read-only.
+	(accept-authenticated-connection): Renamed to authenticate-client.
+	Update callers accordingly.
+
+2010-03-29  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* swank.lisp (connection-info): Use princ-to-string rather than
+	prin1-to-string as the latter may barf if *print-readably* is nil.
+
+2010-03-27  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-check-location-buffer-name-sanity): Less duplication,
+	reuse slime-check-location-filename-sanity.
+	(slime-check-location-filename-sanity): Do any work only when
+	slime-warn-when-possibly-tricked-by-M-. is non-nil.
+
+2010-03-21  Stas Boukarev  <stassats@gmail.com>
+
+	* start-swank.lisp: Document options to swank-loader:init.
+
+	* doc/slime.texi (Miscellaneous): mention
+	`sldb-break-with-system-debugger'.
+
+2010-03-21  Stas Boukarev  <stassats@gmail.com>
+
+	* start-swank.lisp: New file for starting swank by simply loading
+	sbcl --load start-swank.lisp
+
+2010-03-19  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* slime.el (slime-lisp-implementation-program): New connection
+	variable.
+	(slime-set-connection-info): Adapted to set it.
+	(slime-attach-gdb): Use it to invoke gdb so gdb is able to find
+	debugging symbols on non-Linux platforms.
+
+	* swank.lisp (connection-info): Include lisp-implementation-program.
+
+	* swank-backend.lisp (lisp-implementation-program): New interface.
+	Default implementation based on command-line-args.
+
+	* swank-ecl.lisp (command-line-args): Implement.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	Remove attach-gdb restart. Instead add SLDB shortcut `A'.
+
+	* slime.el (slime-dispatch-event): Remove :gdb-attach.
+	(slime-attach-gdb): Changed API. Takes connection not pid now and
+	lightweight &optional arg. If not lightweight, get the default gdb
+	config from the inferior Lisp.
+	(sldb-break-with-system-debugger): New command, bound to `A' in
+	sldb. Called this way to mimick
+	`sldb-break-with-default-debugger', and because it may make sense
+	to go beyond gdb in future, e.g. to invoke the Java Debugger for
+	ABCL.
+
+	* swank.lisp (call-with-gdb-restart, with-gdb-restart): Removed.
+	(with-top-level-restart): Remove use of with-gdb-restart.
+	(make-connection, start-server, create-server, setup-server):
+	Remove inferior-lisp flag again. Not needed anymore.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	Add M-x slime-attach-gdb as an interactive function.
+
+	The ATTACH-GDB restart is nice because it's convenient and the
+	backends can specify customized gdb configuration.
+
+	Sometimes, if the Lisp is too screwed up, going over a restart
+	involving the SWANK middle layer may not be possible. For that, a
+	manual M-x slime-attach-gdb may come in handy.
+
+	* slime.el (slime-read-connection): New helper.
+	(slime-attach-gdb): Use it. Make it an interactive function.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* swank.lisp (call-with-gdb-restart): Forgot to remove trailing T.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* swank.lisp (open-dedicated-output-stream): Forgot to rename
+	accept-authenticated-connection to accept-authenticated-client
+	here.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	Add an ATTACH-GDB restart to SLDB.
+
+	* swank.lisp (call-with-gdb-restart): New. Sends the new
+	:gdb-attach event to Emacs.
+	(with-gdb-restart): Sugar.
+	(with-top-level-restart): Also expand to with-gdb-restart.
+	(dispatch-event): Add :gdb-attach event.
+
+	* swank-backend.lisp (gdb-initial-commands): New interface
+	function so backends can customize how gdb needs to be configured
+	for their implementation.
+
+	* swank-ecl.lisp (gdb-initial-commands): Implement.
+
+	* slime.el (slime-dispatch-event): Add clause for :gdb-attach.
+	(slime-attach-gdb): New.
+
+2010-03-18  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* swank.lisp (connection): Add socket slot, make socket-io slot
+	not be required to be filled in during object creation. Add
+	inferior-lisp slot so we can know whether a connection belongs to
+	a superior Emacs process. Need for that will come in following
+	commit.
+	(make-connection): Our constructor.
+	(create-connection): Removed; not needed anymore.
+	(finish-connection-setup): Function to fill socket-io slot.
+	(start-server): Results in inferior-lisp slot being T.
+	(create-server): Results in inferior-lisp slot being NIL.
+	(setup-server): Adapted accordingly. Construct connection early so
+	we do not have to pass down all the meta information explicitly.
+	(serve-connection): Adapted accordingly.
+	(accept-authenticated-client): Renamed from
+	accept-authenticated-connection.
+	(dispatch-event): Get rid of unused :%apply and :end-of-stream
+	events.
+
+2010-03-16  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* swank-ecl.lisp (source-location): Also return EXT::FOO as
+	candidate to search through the TAGS file because SI and EXT both
+	name the same package, and in ECL's code base, sometimes the
+	former, sometimes the latter is used.
+
 2010-03-10  Tobias C. Rittweiler <tcr@freebits.de>
 
 	* swank.lisp (signal-interrupt): Removed.

@@ -57,6 +57,7 @@
            ;; These are re-exported directly from the backend:
            #:buffer-first-change
            #:frame-source-location
+           #:gdb-initial-commands
            #:restart-frame
            #:sldb-step 
            #:sldb-break
@@ -252,9 +253,13 @@ Backend code should treat the connection structure as opaque.")
 ;;; freed/closed/killed when we disconnect.
 
 (defstruct (connection
+             (:constructor %make-connection)
              (:conc-name connection.)
              (:print-function print-connection))
-  ;; Raw I/O stream of socket connection.
+  ;; The listening socket. (usually closed)
+  (socket           (missing-arg) :type t :read-only t)
+  ;; Character I/O stream of socket connection.  Read-only to avoid
+  ;; race conditions during initialization.
   (socket-io        (missing-arg) :type stream :read-only t)
   ;; Optional dedicated output socket (backending `user-output' slot).
   ;; Has a slot so that it can be closed with the connection.
@@ -307,10 +312,6 @@ Backend code should treat the connection structure as opaque.")
   (declare (ignore depth))
   (print-unreadable-object (conn stream :type t :identity t)))
 
-(defun connection.external-format (connection)
-  (ignore-errors
-    (stream-external-format (connection.socket-io connection))))
-
 (defvar *connections* '()
   "List of all active connections, with the most recent at the front.")
 
@@ -325,6 +326,31 @@ connection is in use, i.e. *EMACS-CONNECTION* is NIL.
 The default connection is defined (quite arbitrarily) as the most
 recently established one."
   (first *connections*))
+
+(defun make-connection (socket stream style coding-system)
+  (multiple-value-bind (serve cleanup)
+      (ecase style
+        (:spawn
+         (values #'spawn-threads-for-connection #'cleanup-connection-threads))
+        (:sigio
+         (values #'install-sigio-handler #'deinstall-sigio-handler))
+        (:fd-handler
+         (values #'install-fd-handler #'deinstall-fd-handler))
+        ((nil)
+         (values #'simple-serve-requests nil)))
+    (let ((conn (%make-connection :socket socket
+                                  :socket-io stream
+                                  :communication-style style
+                                  :coding-system coding-system
+                                  :serve-requests serve
+                                  :cleanup cleanup)))
+      (run-hook *new-connection-hook* conn)
+      (push conn *connections*)
+      conn)))
+
+(defun connection.external-format (connection)
+  (ignore-errors
+    (stream-external-format (connection.socket-io connection))))
 
 (defslimefun ping (tag)
   tag)
@@ -670,15 +696,11 @@ connections, otherwise it will be closed after the first."
 (defun setup-server (port announce-fn style dont-close coding-system)
   (declare (type function announce-fn))
   (init-log-output)
-  (let* ((external-format (find-external-format-or-lose coding-system))
-         (socket (create-socket *loopback-interface* port))
+  (let* ((socket (create-socket *loopback-interface* port))
          (local-port (local-port socket)))
     (funcall announce-fn local-port)
     (flet ((serve ()
-             ;; We pass down the coding-system so we can put it into a
-             ;; CONNECTION for debugging purposes.
-             (serve-connection socket style dont-close
-                               external-format coding-system)))
+             (accept-connections socket style coding-system dont-close)))
       (ecase style
         (:spawn
          (initialize-multiprocessing
@@ -728,37 +750,23 @@ first."
   (create-server :port port :style style :dont-close dont-close
                  :coding-system coding-system))
 
+(defun accept-connections (socket style coding-system dont-close)
+  (let* ((ef (find-external-format-or-lose coding-system))
+         (client (unwind-protect 
+                      (accept-connection socket :external-format ef)
+                   (unless dont-close
+                     (close-socket socket)))))
+    (authenticate-client client)
+    (serve-requests (make-connection socket client style coding-system))))
 
-(defun serve-connection (socket style dont-close external-format coding-system)
-  (let ((closed-socket-p nil))
-    (unwind-protect
-         (let ((client (accept-authenticated-connection
-                        socket :external-format external-format)))
-           (unless dont-close
-             (close-socket socket)
-             (setf closed-socket-p t))
-           (let ((connection (create-connection client style coding-system)))
-             (run-hook *new-connection-hook* connection)
-             (push connection *connections*)
-             (serve-requests connection)))
-      (unless (or dont-close closed-socket-p)
-        (close-socket socket)))))
-
-(defun accept-authenticated-connection (&rest args)
-  (let ((new (apply #'accept-connection args))
-        (success nil))
-    (unwind-protect
-         (let ((secret (slime-secret)))
-           (when secret
-             (set-stream-timeout new 20)
-             (let ((first-val (decode-message new)))
-               (unless (and (stringp first-val) (string= first-val secret))
-                 (error "Incoming connection doesn't know the password."))))
-           (set-stream-timeout new nil)
-           (setf success t))
-      (unless success
-        (close new :abort t)))
-    new))
+(defun authenticate-client (stream)
+  (let ((secret (slime-secret)))
+    (when secret
+      (set-stream-timeout stream 20)
+      (let ((first-val (decode-message stream)))
+        (unless (and (stringp first-val) (string= first-val secret))
+          (error "Incoming connection doesn't know the password.")))
+      (set-stream-timeout stream nil))))
 
 (defun slime-secret ()
   "Finds the magic secret from the user's home directory.  Returns nil
@@ -855,7 +863,7 @@ This is an optimized way for Lisp to deliver output to Emacs."
     (unwind-protect
          (let ((port (local-port socket)))
            (encode-message `(:open-dedicated-output-stream ,port) socket-io)
-           (let ((dedicated (accept-authenticated-connection 
+           (let ((dedicated (accept-connection
                              socket 
                              :external-format 
                              (or (ignore-errors
@@ -863,6 +871,7 @@ This is an optimized way for Lisp to deliver output to Emacs."
                                  :default)
                              :buffering *dedicated-output-stream-buffering*
                              :timeout 30)))
+             (authenticate-client dedicated)
              (close-socket socket)
              (setf socket nil)
              dedicated))
@@ -1074,10 +1083,10 @@ The processing is done in the extent of the toplevel restart."
      (encode-message `(:return ,@args) (current-socket-io)))
     ((:emacs-interrupt thread-id)
      (interrupt-worker-thread thread-id))
-    (((:write-string 
+    (((:write-string
        :debug :debug-condition :debug-activate :debug-return :channel-send
        :presentation-start :presentation-end
-       :new-package :new-features :ed :%apply :indentation-update
+       :new-package :new-features :ed :indentation-update
        :eval :eval-no-wait :background-message :inspect :ping
        :y-or-n-p :read-from-minibuffer :read-string :read-aborted)
       &rest _)
@@ -1088,8 +1097,6 @@ The processing is done in the extent of the toplevel restart."
     ((:emacs-channel-send channel-id msg)
      (let ((ch (find-channel channel-id)))
        (send-event (channel-thread ch) `(:emacs-channel-send ,ch ,msg))))
-    (((:end-of-stream))
-     (close-connection *emacs-connection* nil (safe-backtrace)))
     ((:reader-error packet condition)
      (encode-message `(:reader-error ,packet 
                                      ,(safe-condition-message condition))
@@ -1307,34 +1314,6 @@ The processing is done in the extent of the toplevel restart."
     (loop (let ((c (read-char-no-hang stream)))
             (unless c (return))
             (write-char c str)))))
-
-(defun create-connection (socket-io style coding-system)
-  (let ((success nil))
-    (unwind-protect
-         (let ((c (ecase style
-                    (:spawn
-                     (make-connection :socket-io socket-io
-                                      :serve-requests #'spawn-threads-for-connection
-                                      :cleanup #'cleanup-connection-threads))
-                    (:sigio
-                     (make-connection :socket-io socket-io
-                                      :serve-requests #'install-sigio-handler
-                                      :cleanup #'deinstall-sigio-handler))
-                    (:fd-handler
-                     (make-connection :socket-io socket-io
-                                      :serve-requests #'install-fd-handler
-                                      :cleanup #'deinstall-fd-handler))
-                    ((nil)
-                     (make-connection :socket-io socket-io
-                                      :serve-requests #'simple-serve-requests))
-                    )))
-           (setf (connection.communication-style c) style)
-           (setf (connection.coding-system c) coding-system)
-           (setf success t)
-           c)
-      (unless success
-        (close socket-io :abort t)))))
-
 
 ;;;; IO to Emacs
 ;;;
@@ -1747,11 +1726,12 @@ VERSION: the protocol version"
       :encoding (:coding-system ,(connection.coding-system c)
                  ;; external-formats are totally implementation-dependent,
                  ;; so better play safe.
-                 :external-format ,(prin1-to-string
+                 :external-format ,(princ-to-string
                                     (connection.external-format c)))
       :lisp-implementation (:type ,(lisp-implementation-type)
                             :name ,(lisp-implementation-type-name)
-                            :version ,(lisp-implementation-version))
+                            :version ,(lisp-implementation-version)
+                            :program ,(lisp-implementation-program))
       :machine (:instance ,(machine-instance)
                :type ,(machine-type)
                :version ,(machine-version))
