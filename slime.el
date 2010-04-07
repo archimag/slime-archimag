@@ -1900,7 +1900,7 @@ This is automatically synchronized from Lisp.")
     (destructuring-bind (&key pid style lisp-implementation machine
                               features package version modules
                               &allow-other-keys) info
-      ;;(slime-check-version version connection)
+      (slime-check-version version connection)
       (setf (slime-pid) pid
             (slime-communication-style) style
             (slime-lisp-features) features
