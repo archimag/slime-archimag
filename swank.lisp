@@ -30,6 +30,7 @@
            #:add-hook
            #:*new-connection-hook*
            #:*connection-closed-hook*
+           #:object-source-location
            ;;#:inspect-slot-for-emacs
            ;; These are user-configurable variables:
            #:*communication-style*
@@ -3146,11 +3147,18 @@ Include the nicknames if NICKNAMES is true."
 
 ;;;; Source Locations
 
+(defgeneric object-source-location (object)
+  (:documentation "Generic method for search source location of object.
+Default implementation call find-source-location.")
+  (:method (object)
+    (find-source-location object)))
+
+
 (defslimefun find-definition-for-thing (thing)
-  (find-source-location thing))
+  (object-source-location thing))
 
 (defslimefun find-source-location-for-emacs (spec)
-  (find-source-location (value-spec-ref spec)))
+  (object-source-location (value-spec-ref spec)))
 
 (defun value-spec-ref (spec)
   (destructure-case spec
