@@ -360,6 +360,14 @@ recently established one."
     (call-with-debugging-environment 
      (lambda () (backtrace 0 nil)))))
 
+(define-condition swank-protocol-error (error) 
+  ((condition :initarg :condition :reader swank-protocol-error.condition))
+  (:report (lambda (condition stream)
+             (princ (swank-protocol-error.condition condition) stream))))
+
+(defun make-swank-protocol-error (condition)
+  (make-condition 'swank-protocol-error :condition condition))
+
 (defvar *debug-on-swank-protocol-error* nil
   "When non-nil invoke the system debugger on errors that were
 signalled during decoding/encoding the wire protocol.  Do not set this
@@ -398,7 +406,124 @@ to T unless you want to debug swank internals.")
 
 ;;;; Utilities
 
+
+;;;;; Logging
+
+(defvar *swank-io-package*
+  (let ((package (make-package :swank-io-package :use '())))
+    (import '(nil t quote) package)
+    package))
+
+(defvar *log-events* nil)
+(defvar *log-output* nil) ; should be nil for image dumpers
+
+(defun init-log-output ()
+  (unless *log-output*
+    (setq *log-output* (real-output-stream *error-output*))))
+
+(defun real-input-stream (stream)
+  (typecase stream
+    (synonym-stream 
+     (real-input-stream (symbol-value (synonym-stream-symbol stream))))
+    (two-way-stream
+     (real-input-stream (two-way-stream-input-stream stream)))
+    (t stream)))
+
+(defun real-output-stream (stream)
+  (typecase stream
+    (synonym-stream 
+     (real-output-stream (symbol-value (synonym-stream-symbol stream))))
+    (two-way-stream
+     (real-output-stream (two-way-stream-output-stream stream)))
+    (t stream)))
+
+(defvar *event-history* (make-array 40 :initial-element nil)
+  "A ring buffer to record events for better error messages.")
+(defvar *event-history-index* 0)
+(defvar *enable-event-history* t)
+
+(defun log-event (format-string &rest args)
+  "Write a message to *terminal-io* when *log-events* is non-nil.
+Useful for low level debugging."
+  (with-standard-io-syntax
+    (let ((*print-readably* nil)
+          (*print-pretty* nil)
+          (*package* *swank-io-package*))
+      (when *enable-event-history*
+        (setf (aref *event-history* *event-history-index*) 
+              (format nil "~?" format-string args))
+        (setf *event-history-index* 
+              (mod (1+ *event-history-index*) (length *event-history*))))
+      (when *log-events*
+        (write-string (escape-non-ascii (format nil "~?" format-string args))
+                      *log-output*)
+        (force-output *log-output*)))))
+
+(defun event-history-to-list ()
+  "Return the list of events (older events first)."
+  (let ((arr *event-history*)
+        (idx *event-history-index*))
+    (concatenate 'list (subseq arr idx) (subseq arr 0 idx))))
+
+(defun clear-event-history ()
+  (fill *event-history* nil)
+  (setq *event-history-index* 0))
+
+(defun dump-event-history (stream)
+  (dolist (e (event-history-to-list))
+    (dump-event e stream)))
+
+(defun dump-event (event stream)
+  (cond ((stringp event)
+         (write-string (escape-non-ascii event) stream))
+        ((null event))
+        (t 
+         (write-string
+          (escape-non-ascii (format nil "Unexpected event: ~A~%" event))
+          stream))))
+
+(defun escape-non-ascii (string)
+  "Return a string like STRING but with non-ascii chars escaped."
+  (cond ((ascii-string-p string) string)
+        (t (with-output-to-string (out)
+             (loop for c across string do
+               (cond ((ascii-char-p c) (write-char c out))
+                     (t (format out "\\x~4,'0X" (char-code c)))))))))
+
+(defun ascii-string-p (o)
+  (and (stringp o)
+       (every #'ascii-char-p o)))
+
+(defun ascii-char-p (c) 
+  (<= (char-code c) 127))
+
+
 ;;;;; Helper macros
+
+(defmacro destructure-case (value &rest patterns)
+  "Dispatch VALUE to one of PATTERNS.
+A cross between `case' and `destructuring-bind'.
+The pattern syntax is:
+  ((HEAD . ARGS) . BODY)
+The list of patterns is searched for a HEAD `eq' to the car of
+VALUE. If one is found, the BODY is executed with ARGS bound to the
+corresponding values in the CDR of VALUE."
+  (let ((operator (gensym "op-"))
+	(operands (gensym "rand-"))
+	(tmp (gensym "tmp-")))
+    `(let* ((,tmp ,value)
+	    (,operator (car ,tmp))
+	    (,operands (cdr ,tmp)))
+       (case ,operator
+         ,@(loop for (pattern . body) in patterns collect 
+                 (if (eq pattern t)
+                     `(t ,@body)
+                     (destructuring-bind (op &rest rands) pattern
+                       `(,op (destructuring-bind ,rands ,operands 
+                               ,@body)))))
+         ,@(if (eq (caar (last patterns)) t)
+               '()
+               `((t (error "destructure-case failed: ~S" ,tmp))))))))
 
 ;; If true execute interrupts, otherwise queue them.
 ;; Note: `with-connection' binds *pending-slime-interrupts*.
@@ -406,11 +531,11 @@ to T unless you want to debug swank internals.")
 
 (defmacro with-interrupts-enabled% (flag body)
   `(progn
-     (check-slime-interrupts)
+     ,@(if flag '((check-slime-interrupts)))
      (multiple-value-prog1
          (let ((*slime-interrupts-enabled* ,flag))
            ,@body)
-       (check-slime-interrupts))))
+       ,@(if flag '((check-slime-interrupts))))))
 
 (defmacro with-slime-interrupts (&body body)
   `(with-interrupts-enabled% t ,body))
@@ -432,9 +557,11 @@ to T unless you want to debug swank internals.")
                       (list function)))
          (cond ((cdr *pending-slime-interrupts*)
                 (log-event "too many queued interrupts~%")
-                (check-slime-interrupts))
+                (with-simple-restart (continue "Continue from interrupt")
+                  (handler-bind ((serious-condition #'invoke-slime-debugger))
+                    (check-slime-interrupts))))
                (t
-                (log-event "queue-interrupt: ~a" function)
+                (log-event "queue-interrupt: ~a~%" function)
                 (when *interrupt-queued-handler*
                   (funcall *interrupt-queued-handler*)))))))
 
@@ -628,17 +755,29 @@ keywords: :BOUNDP, :FBOUNDP, :CONSTANT, :GENERIC-FUNCTION,
 
       result)))
 
-(defun symbol-classification->string (flags)
-  (format nil "~A~A~A~A~A~A~A~A"
-          (if (or (member :boundp flags)
-                  (member :constant flags)) "b" "-")
-          (if (member :fboundp flags) "f" "-")
-          (if (member :generic-function flags) "g" "-")
-          (if (member :class flags) "c" "-")
-          (if (member :typespec flags) "t" "-")
-          (if (member :macro flags) "m" "-")
-          (if (member :special-operator flags) "s" "-")
-          (if (member :package flags) "p" "-")))
+(defun symbol-classification-string (symbol)
+  "Return a string in the form -f-c---- where each letter stands for
+boundp fboundp generic-function class macro special-operator package"
+  (let ((letters "bfgctmsp")
+        (result (copy-seq "--------")))
+    (flet ((type-specifier-p (s)
+             (or (documentation s 'type)
+                 (not (eq (type-specifier-arglist s) :not-available))))
+           (flip (letter)
+             (setf (char result (position letter letters))
+                   letter)))
+      (when (boundp symbol) (flip #\b))
+      (when (fboundp symbol)
+        (flip #\f)
+        (when (typep (ignore-errors (fdefinition symbol))
+                     'generic-function)
+          (flip #\g)))
+      (when (type-specifier-p symbol) (flip #\t))
+      (when (find-class symbol nil)   (flip #\c) )
+      (when (macro-function symbol)   (flip #\m))
+      (when (special-operator-p symbol) (flip #\s))
+      (when (find-package symbol)       (flip #\p))
+      result)))
 
 
 ;;;; TCP Server
@@ -878,6 +1017,28 @@ This is an optimized way for Lisp to deliver output to Emacs."
       (when socket
         (close-socket socket)))))
 
+
+;;;;; Event Decoding/Encoding
+
+(defun decode-message (stream)
+  "Read an S-expression from STREAM using the SLIME protocol."
+  (log-event "decode-message~%")
+  (without-slime-interrupts
+    (handler-bind ((error (lambda (c) (error (make-swank-protocol-error c)))))
+      (handler-case (read-message stream *swank-io-package*)
+        (swank-reader-error (c) 
+          `(:reader-error ,(swank-reader-error.packet c)
+                          ,(swank-reader-error.cause c)))))))
+
+(defun encode-message (message stream)
+  "Write an S-expression to STREAM using the SLIME protocol."
+  (log-event "encode-message~%")
+  (without-slime-interrupts
+    (handler-bind ((error (lambda (c) (error (make-swank-protocol-error c)))))
+      (write-message message *swank-io-package* stream))))
+
+
+;;;;; Event Processing
 ;; By default, this restart will be named "abort" because many people
 ;; press "a" instead of "q" in the debugger.
 (define-special *sldb-quit-restart*
@@ -1120,6 +1281,11 @@ The processing is done in the extent of the toplevel restart."
         (t (dispatch-event event))))
 
 (defun wait-for-event (pattern &optional timeout)
+  "Scan the event queue for PATTERN and return the event.
+If TIMEOUT is 'nil wait until a matching event is enqued.
+If TIMEOUT is 't only scan the queue without waiting.
+The second return value is t if the timeout expired before a matching
+event was found."
   (log-event "wait-for-event: ~s ~s~%" pattern timeout)
   (without-slime-interrupts
     (cond ((use-threads-p) 
@@ -2665,7 +2831,8 @@ The time is measured in seconds."
                  (funcall function)))))
       (make-compilation-result (reverse notes) (and successp t) seconds))))
 
-(defslimefun compile-file-for-emacs (filename load-p &key options policy)
+(defslimefun compile-file-for-emacs (filename load-p &rest options &key policy
+                                              &allow-other-keys)
   "Compile FILENAME and, when LOAD-P, load the result.
 Record compiler notes signalled as `compiler-condition's."
   (with-buffer-syntax ()
@@ -3586,6 +3753,9 @@ a time.")
 LABELS is a list of attribute names and the remaining lists are the
 corresponding attribute values per thread."
   (setq *thread-list* (all-threads))
+  (when (and (use-threads-p)
+             (equalp (thread-name (current-thread)) "worker"))
+    (setf *thread-list* (delete (current-thread) *thread-list*)))
   (let* ((plist (thread-attributes (car *thread-list*)))
          (labels (loop for (key) on plist by #'cddr 
                        collect key)))

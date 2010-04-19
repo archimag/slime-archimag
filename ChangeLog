@@ -1,3 +1,73 @@
+2010-04-19  Stas Boukarev  <stassats@gmail.com>
+
+	* swank.lisp (symbol-classification-string): New function to
+	replace (symbol-classification->string (classify-symbol
+	symbol)). It's faster and conses much less, while it is called
+	many times by fuzzy completion and fancy inspector.
+	(symbol-classification->string): Removed.
+	(list-threads): Exclude the current thread only if its name is
+	"worker".
+
+2010-04-18  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-threads-update-interval): Add :group and :type
+	parameters to this customization.
+	Thanks to Mark Harig.
+
+2010-04-17  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-threads-update-interval): New customization
+	variable, if set to a number the threads buffer will
+	updated with this interval.
+	(slime-with-popup-buffer): Rename modes option to mode,
+	for a major mode. Enabling minor modes from within the body
+	doesn't cause troubles. End that way it is compatible with XEmacs
+	since it doesn't need to use minor-mode-list to distinguish
+	between minor and major modes.
+
+	* swank.lisp (list-threads): Delete the current thread from the listing.
+
+2010-04-15  Tobias C. Rittweiler <tcr@freebits.de>
+
+	* slime.el (sldb-mode): Include some more commands in its help.
+	(sldb-goto-last-frame): Do not center to the middle but to the
+	bottom of the window.
+
+2010-04-14  Helmut Eller  <heller@common-lisp.net>
+
+	* swank.lisp (compile-file-for-emacs): Actually commit the change
+	described in 2010-04-12.
+
+2010-04-14  Helmut Eller  <heller@common-lisp.net>
+
+	* slime.el ([test] interrupt-encode-message): New test.
+
+2010-04-14  Helmut Eller  <heller@common-lisp.net>
+
+	Handle errors during interrupt processing with SLDB.
+	Bugfix for http://article.gmane.org/gmane.lisp.slime.devel/9641
+
+	* swank.lisp (invoke-or-queue-interrupt): When the queue is full,
+	process the interrupt immediately and also handle
+	SERIOUS-CONDITIONs during interrupt processing in SLDB.  SLDB
+	should work more likely than the interrupted code is expected to
+	handle the condition.
+	(with-interrupts-enabled%): Don't check for interrupts when
+	toggling interrupts off.
+	(wait-for-event): Add docstring.
+
+2010-04-14  Helmut Eller  <heller@common-lisp.net>
+
+	Move error handling and logging from swank-rpc.lisp to swank.lisp
+
+	* swank.lisp (log-event, destructure-case, decode-message)
+	(encode-message, decode-message, swank-protocol-error): Moved back
+	to swank.lisp from swank-rpc.lisp.  It never belonged there
+	anyway.
+
+	* swank-rpc.lisp (read-message, write-message): New functions.
+	(swank-reader-error): New condition.
+
 2010-04-12  Helmut Eller  <heller@common-lisp.net>
 
 	* slime.el (slime-doc-bindings): Restore key for slime-apropos.
