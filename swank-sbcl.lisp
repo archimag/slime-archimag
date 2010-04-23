@@ -1269,11 +1269,13 @@ stack."
          (label-value-line* (:value (sb-kernel:value-cell-ref o))))
 	(t
 	 (multiple-value-bind (text label parts) (sb-impl::inspected-parts o)
-           (list* (format nil "~a~%" text)
+           (list* (string-right-trim '(#\Newline) text)
+                  '(:newline)
                   (if label
                       (loop for (l . v) in parts
                             append (label-value-line l v))
-                      (loop for value in parts  for i from 0
+                      (loop for value in parts
+                            for i from 0
                             append (label-value-line i value))))))))
 
 (defmethod emacs-inspect ((o function))
@@ -1343,7 +1345,7 @@ stack."
 ;;;; Multiprocessing
 
 #+(and sb-thread
-       #.(cl:if (cl:find-symbol "THREAD-NAME" "SB-THREAD") '(and) '(or)))
+       #.(swank-backend:with-symbol "THREAD-NAME" "SB-THREAD"))
 (progn
   (defvar *thread-id-counter* 0)
 
@@ -1450,10 +1452,25 @@ stack."
         (setf (mailbox.queue mbox)
               (nconc (mailbox.queue mbox) (list message)))
         (sb-thread:condition-broadcast (mailbox.waitqueue mbox)))))
+  #-sb-lutex
+  (defun condition-timed-wait (waitqueue mutex timeout)
+    (handler-case 
+        (let ((*break-on-signals* nil))
+          (sb-sys:with-deadline (:seconds timeout :override t)
+            (sb-thread:condition-wait waitqueue mutex) t))
+      (sb-ext:timeout ()
+        nil)))
 
+  ;; FIXME: with-timeout doesn't work properly on Darwin
+  #+sb-lutex
+  (defun condition-timed-wait (waitqueue mutex timeout)
+    (declare (ignore timeout))
+    (sb-thread:condition-wait waitqueue mutex))
+  
   (defimplementation receive-if (test &optional timeout)
     (let* ((mbox (mailbox (current-thread)))
-           (mutex (mailbox.mutex mbox)))
+           (mutex (mailbox.mutex mbox))
+           (waitq (mailbox.waitqueue mbox)))
       (assert (or (not timeout) (eq timeout t)))
       (loop
        (check-slime-interrupts)
@@ -1464,17 +1481,7 @@ stack."
              (setf (mailbox.queue mbox) (nconc (ldiff q tail) (cdr tail)))
              (return (car tail))))
          (when (eq timeout t) (return (values nil t)))
-         ;; FIXME: with-timeout doesn't work properly on Darwin
-         #+linux
-         (handler-case 
-             (let ((*break-on-signals* nil))
-               (sb-ext:with-timeout 0.2
-                 (sb-thread:condition-wait (mailbox.waitqueue mbox)
-                                           mutex)))
-           (sb-ext:timeout ()))
-         #-linux  
-         (sb-thread:condition-wait (mailbox.waitqueue mbox)
-                                   mutex)))))
+         (condition-timed-wait waitq mutex 0.2)))))
   )
 
 (defimplementation quit-lisp ()
