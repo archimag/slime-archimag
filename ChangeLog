@@ -1,3 +1,38 @@
+2010-05-01  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-restart-sentinel): Don't pop to the inferior
+	buffer, since this command is usually run either from
+	*inferior-lisp* buffer or from REPL, it makes sense to reuse
+	current window instead of messing up window configuration.
+	(slime-move-point): New function, moves point in a buffer and
+	its window.
+
+2010-04-29  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-compile-file): Run check-parens after checking
+	that the buffer is associated with a file.
+
+2010-04-27  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-info): New function, opens the manual.
+
+2010-04-24  Stas Boukarev  <stassats@gmail.com>
+
+	* swank.lisp (format-values-for-echo-area): Also print the length of an
+	integer in bits.
+
+2010-04-23  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-update-threads-buffer): Use slime-eval-async.
+
+2010-04-23  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-inspector-buffer): Use slime-with-popup-buffer,
+	that solves the problem with keybindings shadowed by slime-mode.
+	Reported by Nathan Bird.
+
+	* README: Better wording.
+
 2010-04-22  Stas Boukarev  <stassats@gmail.com>
 
 	* swank-backend.lisp (with-symbol): Test for package before doing
