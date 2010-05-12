@@ -3984,5 +3984,6 @@ Collisions are caused because package information is ignored."
   (run-hook *after-init-hook*))
 
 (pushnew :swank *features*)
+(pushnew :swank-archimag *features*)
 
 ;;; swank.lisp ends here
