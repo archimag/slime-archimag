@@ -1,3 +1,40 @@
+2010-05-10  Mark Evenson  <evenson@panix.com>
+
+	* swank-loader.lisp (*architecture-features*): Add Java platforms
+	as features for ABCL.
+
+2010-05-06  Helmut Eller  <heller@common-lisp.net>
+
+	Remove some non-standard file variables.
+
+	* swank-cmucl.lisp, swank-scl.lisp: Remove pbook vars.
+	* swank-clisp.lisp: Remove indentation settings. Slime does it
+	automatically.
+
+2010-05-05  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-dispatch-event): Fix typo in the previous commit.
+
+2010-05-05  Stas Boukarev  <stassats@gmail.com>
+
+	* Make buffer names more consistent.
+	Patch by Leo Liu.
+
+2010-05-05  Helmut Eller  <heller@common-lisp.net>
+
+	* swank-cmucl.lisp (gdb-command): Use gdb's MI.
+
+2010-05-05  Mark Evenson <evenson@panix.com>
+
+	Fix for Cygwin Emacs filename problem.
+
+	* slime.el (slime-init-command): Use slime-to-lisp-filename.
+
+2010-05-05  Helmut Eller  <heller@common-lisp.net>
+
+	* slime.el (sldb-exit): When stepping, close buffer after a delay.
+	(sldb-close-step-buffer): New function.
+
 2010-05-01  Stas Boukarev  <stassats@gmail.com>
 
 	* slime.el (slime-restart-sentinel): Don't pop to the inferior
