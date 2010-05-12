@@ -4314,7 +4314,8 @@ the following cases (the . shows the point position):
  (defparameter n.ame ...)                -> (:defparameter name)
  (defconstant n.ame ...)                 -> (:defconstant name)
  (defclass n.ame ...)                    -> (:defclass name)
-
+ (defstruct n.ame ...)                   -> (:defstruct name)
+ (defpackage n.ame ...)                  -> (:defpackage name)
 For other contexts we return the symbol at point."
   (let ((name (slime-symbol-at-point)))
     (if name
@@ -4369,6 +4370,11 @@ For other contexts we return the symbol at point."
           ((slime-in-expression-p '(defparameter *)) `(:defparameter ,name))
           ((slime-in-expression-p '(defconstant *))  `(:defconstant ,name))
           ((slime-in-expression-p '(defclass *))     `(:defclass ,name))
+          ((slime-in-expression-p '(defpackage *))   `(:defpackage ,name))
+          ((slime-in-expression-p '(defstruct *))
+           `(:defstruct ,(if (consp name)
+                             (car name)
+                             name)))
           (t 
            name))))
 
@@ -6536,6 +6542,34 @@ was called originally."
              (slime-read-from-minibuffer "Inspect value (evaluated): "
                                          (slime-sexp-at-point)))))
   (slime-eval-async `(swank:init-inspector ,string) 'slime-open-inspector))
+
+(defun slime-inspect-definition ()
+  "Inspect definition at point"
+  (interactive)
+  (let* ((toplevel (slime-parse-toplevel-form))
+         (form
+          (if (symbolp toplevel)
+              (error "Not in a definition")
+              (destructure-case toplevel
+                (((:defun :defgeneric) symbol)
+                 (format "#'%s" symbol))
+                (((:defmacro :define-modify-macro) symbol)
+                 (format "(macro-function '%s)" symbol))
+                ((:define-compiler-macro symbol)
+                 (format "(compiler-macro-function '%s)" symbol))
+                ((:defmethod symbol &rest args)
+                 (declare (ignore args))
+                 (format "#'%s" symbol))
+                (((:defparameter :defvar :defconstant) symbol)
+                 (format "'%s" symbol))
+                (((:defclass :defstruct) symbol)
+                 (format "(find-class '%s)" symbol))
+                ((:defpackage symbol)
+                 (format "(or (find-package '%s) (error \"Package %s not found\"))"
+                         symbol symbol))
+                (t
+                 (error "Not in a definition"))))))
+    (slime-eval-async `(swank:init-inspector ,form) 'slime-open-inspector)))
 
 (define-derived-mode slime-inspector-mode fundamental-mode
   "Slime-Inspector"
