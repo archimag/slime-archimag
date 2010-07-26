@@ -1,3 +1,41 @@
+2010-07-24  Stas Boukarev  <stassats@gmail.com>
+
+	* slime-package-fu.el (slime-frob-defpackage-form): Accept a
+	symbol or a list of symbols. Optimize inserting several symbols at
+	a time.
+	(slime-search-exports-in-defpackage): Search forward until nothing
+	is found, otherwise it searching for FOO will stop after encountering
+	FOO-B.
+	(slime-export-class): Rename from slime-export-structure.
+
+	* swank-package-fu.lisp (export-symbol-for-emacs): Fix typo.
+	(export-structure): Add support for CCL and for exporting
+	standard-class accessors using MOP.
+
+	* slime-sprof.el (slime-sprof-start-alloc)
+	(slime-sprof-start-time): New functions to start profiling in
+	:alloc and :time mode. The default slime-sprof-start is :cpu.
+	* swank-sprof.lisp (swank-sprof-start): Accept :mode keyword.
+
+2010-07-24  Stas Boukarev  <stassats@gmail.com>
+
+	* slime-package-fu.el (slime-export-structure): New function,
+	export all constructors, accessors, etc.
+	* swank-package-fu.lisp (export-structure): Lisp side of the above
+	function, works only on SBCL for now.
+
+2010-07-23  Stas Boukarev  <stassats@gmail.com>
+
+	* swank-arglists.lisp (arglist-dispatch): Export it, so it may be
+	extended more easily.
+
+	* slime-fancy-inspector.el (slime-fancy-inspector): Add
+	slime-parse dependency.
+
+2010-07-16  Stas Boukarev  <stassats@gmail.com>
+
+	* slime-repl.el (slime-call-defun): Handle setf-functions.
+
 2010-07-04  Stas Boukarev  <stassats@gmail.com>
 
 	* swank-asdf.lisp (asdf:operation-done-p): Fix reloading on
