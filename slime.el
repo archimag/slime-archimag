@@ -1188,9 +1188,9 @@ DIRECTORY change to this directory before starting the process.
   (interactive (list (read-from-minibuffer
                       "Host: " (first slime-connect-host-history)
                       nil nil '(slime-connect-host-history . 1))
-                     (read-from-minibuffer
+                     (string-to-int (read-from-minibuffer
                       "Port: " (first slime-connect-port-history)
-                      nil nil '(slime-connect-port-history . 1))))
+                      nil nil '(slime-connect-port-history . 1)))))
   (when (and (interactive-p) slime-net-processes
              (y-or-n-p "Close old connections first? "))
     (slime-disconnect-all))
@@ -3279,12 +3279,12 @@ you should check twice before modifying.")
     ((:function-name name)
      (let ((case-fold-search t)
            (name (regexp-quote name)))
-       (when (or 
-              (re-search-forward 
-               (format "\\s *(def\\(\\s_\\|\\sw\\)*\\s +%s\\S_" name) nil t)
-              (re-search-forward 
-               (format "\\s *(def\\(\\s_\\|\\sw\\)*\\s +(*%s\\S_" name) nil t)
-              (re-search-forward 
+       (goto-char (point-min))
+       (when (or
+              (re-search-forward
+               (format "\\s *(def\\(\\s_\\|\\sw\\)*\\s +(*%s\\S_"
+                       (regexp-quote name)) nil t)
+              (re-search-forward
                (format "[( \t]%s\\>\\(\\s \\|$\\)" name) nil t))
          (goto-char (match-beginning 0)))))
     ((:method name specializers &rest qualifiers)
@@ -3342,11 +3342,20 @@ Don't move if there are multiple or no calls in the current defun."
   (save-restriction 
     (narrow-to-defun)
     (let ((start (point))
-          (regexp (concat "(" fname "[\n \t]")))
+          (regexp (concat "(" fname "[)\n \t]"))
+          (case-fold-search t))
       (cond ((and (re-search-forward regexp nil t)
                   (not (re-search-forward regexp nil t)))
              (goto-char (match-beginning 0)))
             (t (goto-char start))))))
+
+(defun slime-search-edit-path (edit-path)
+  "Move to EDIT-PATH starting at the current toplevel form."
+  (when edit-path
+    (unless (and (= (current-column) 0)
+                 (looking-at "("))
+      (beginning-of-defun))
+    (slime-forward-source-path edit-path)))
 
 (defun slime-goto-source-location (location &optional noerror)
   "Move to the source location LOCATION.  Several kinds of locations
@@ -3387,6 +3396,8 @@ are supported:
     (let ((hints (slime-location.hints location)))
       (when-let (snippet (getf hints :snippet))
         (slime-isearch snippet))
+      (when-let (snippet (getf hints :edit-path))
+        (slime-search-edit-path snippet))
       (when-let (fname (getf hints :call-site))
         (slime-search-call-site fname))
       (when (getf hints :align)

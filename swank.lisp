@@ -2674,7 +2674,9 @@ Operation was KERNEL::DIVISION, operands (1 0).\"
   (nth index *sldb-restarts*))
 
 (defslimefun invoke-nth-restart (index)
-  (invoke-restart-interactively (nth-restart index)))
+  (let ((restart (nth-restart index)))
+    (when restart
+      (invoke-restart-interactively restart))))
 
 (defslimefun sldb-abort ()
   (invoke-restart (find 'abort *sldb-restarts* :key #'restart-name)))

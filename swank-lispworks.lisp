@@ -336,7 +336,7 @@ Return NIL if the symbol is unbound."
 
 (defun nth-frame (index)
   (nth-next-frame *sldb-top-frame* index))
-           
+
 (defun find-top-frame ()
   "Return the most suitable top-frame for the debugger."
   (or (do ((frame (dbg::debugger-stack-current-frame dbg::*debugger-stack*)
@@ -406,9 +406,11 @@ Return NIL if the symbol is unbound."
     (if (dbg::call-frame-p frame)
 	(let ((dspec (dbg::call-frame-function-name frame))
               (cname (and (dbg::call-frame-p callee)
-                          (dbg::call-frame-function-name callee))))
+                          (dbg::call-frame-function-name callee)))
+              (path (and (dbg::call-frame-p frame)
+                         (dbg::call-frame-edit-path frame))))
 	  (if dspec
-              (frame-location dspec cname))))))
+              (frame-location dspec cname path))))))
 
 (defimplementation eval-in-frame (form frame-number)
   (let ((frame (nth-frame frame-number)))
@@ -432,18 +434,33 @@ Return NIL if the symbol is unbound."
 
 ;;; Definition finding
 
-(defun frame-location (dspec callee-name)
+(defun frame-location (dspec callee-name edit-path)
   (let ((infos (dspec:find-dspec-locations dspec)))
     (cond (infos 
            (destructuring-bind ((rdspec location) &rest _) infos
              (declare (ignore _))
              (let ((name (and callee-name (symbolp callee-name)
-                              (string callee-name))))
-               (make-dspec-location rdspec location 
-                                    `(:call-site ,name)))))
+                              (string callee-name)))
+                   (path (edit-path-to-cmucl-source-path edit-path)))
+               (make-dspec-location rdspec location
+                                    `(:call-site ,name :edit-path ,path)))))
           (t 
            (list :error (format nil "Source location not available for: ~S" 
                                 dspec))))))
+
+;; dbg::call-frame-edit-path is not documented but lets assume the
+;; binary representation of the integer EDIT-PATH should be
+;; interpreted as a sequence of CAR or CDR.  #b1111010 is roughly the
+;; same as cadadddr.  Something is odd with the highest bit.
+(defun edit-path-to-cmucl-source-path (edit-path)
+  (and edit-path
+       (cons 0
+             (let ((n -1))
+               (loop for i from (1- (integer-length edit-path)) downto 0
+                     if (logbitp i edit-path) do (incf n)
+                     else collect (prog1 n (setq n 0)))))))
+
+;; (edit-path-to-cmucl-source-path #b1111010) => (0 3 1)
 
 (defimplementation find-definitions (name)
   (let ((locations (dspec:find-name-locations dspec:*dspec-classes* name)))
@@ -697,10 +714,8 @@ function names like \(SETF GET)."
 (defxref who-macroexpands hcl:who-calls) ; macros are in the calls table too
 (defxref calls-who      hcl:calls-who)
 (defxref list-callers   list-callers-internal)
-#+lispworks6
 (defxref list-callees   list-callees-internal)
 
-#-lispworks6
 (defun list-callers-internal (name)
   (let ((callers (make-array 100
                              :fill-pointer 0
@@ -708,7 +723,8 @@ function names like \(SETF GET)."
     (hcl:sweep-all-objects
      #'(lambda (object)
          (when (and #+Harlequin-PC-Lisp (low:compiled-code-p object)
-                    #-Harlequin-PC-Lisp (sys::callablep object)
+                    #+Harlequin-Unix-Lisp (sys:callablep object)
+                    #-(or Harlequin-PC-Lisp Harlequin-Unix-Lisp) (sys:compiled-code-p object)
                     (system::find-constant$funcallable name object))
            (vector-push-extend object callers))))
     ;; Delay dspec:object-dspec until after sweep-all-objects
@@ -718,23 +734,18 @@ function names like \(SETF GET)."
 		      (list 'function object)
                       (or (dspec:object-dspec object) object)))))
 
-#+lispworks6
-(defun list-callers-internal (name)
-    ;; Delay dspec:object-dspec until after sweep-all-objects
-    ;; to reduce allocation problems.
-    (loop for object in (hcl::who-calls name)
-          collect (if (symbolp object)
-		      (list 'function object)
-                      (or (dspec:object-dspec object) object))))
-
-#+lispworks6
 (defun list-callees-internal (name)
-    ;; Delay dspec:object-dspec until after sweep-all-objects
-    ;; to reduce allocation problems.
-    (loop for object in (hcl::calls-who name)
-          collect (if (symbolp object)
-		      (list 'function object)
-                      (or (dspec:object-dspec object) object))))
+  (let ((callees '()))
+    (system::find-constant$funcallable
+     'junk name
+     :test #'(lambda (junk constant)
+               (declare (ignore junk))
+               (when (and (symbolp constant)
+                          (fboundp constant))
+                 (pushnew (list 'function constant) callees :test 'equal))
+               ;; Return nil so we iterate over all constants.
+               nil))
+    callees))
 
 ;; only for lispworks 4.2 and above
 #-lispworks4.1
