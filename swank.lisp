@@ -70,7 +70,8 @@
            #:default-directory
            #:set-default-directory
            #:quit-lisp
-           #:eval-for-emacs))
+           #:eval-for-emacs
+           #:eval-in-emacs))
 
 (in-package :swank)
 
@@ -183,11 +184,13 @@ bound to the corresponding VALUE.")
 (defun call-with-bindings (alist fun)
   "Call FUN with variables bound according to ALIST.
 ALIST is a list of the form ((VAR . VAL) ...)."
-  (let* ((rlist (reverse alist))
-         (vars (mapcar #'car rlist))
-         (vals (mapcar #'cdr rlist)))
-    (progv vars vals
-      (funcall fun))))
+  (if (null alist)
+      (funcall fun)
+      (let* ((rlist (reverse alist))
+             (vars (mapcar #'car rlist))
+             (vals (mapcar #'cdr rlist)))
+        (progv vars vals
+          (funcall fun)))))
 
 (defmacro with-bindings (alist &body body)
   "See `call-with-bindings'."
@@ -1821,8 +1824,17 @@ converted to lower case."
     (number (let ((*print-base* 10))
               (princ-to-string form)))))
 
+(defstruct (unreadable-object
+             (:print-object
+              (lambda (object stream)
+                (print-unreadable-object (object stream :type t :identity t)
+                  (princ (unreadable-object-string object)
+                         stream)))))
+  string)
+
 (defun eval-in-emacs (form &optional nowait)
-  "Eval FORM in Emacs."
+  "Eval FORM in Emacs.
+`slime-enable-evaluate-in-emacs' should be set to T on the Emacs side."
   (cond (nowait 
          (send-to-emacs `(:eval-no-wait ,(process-form-for-emacs form))))
         (t
@@ -1832,7 +1844,9 @@ converted to lower case."
 				  ,(process-form-for-emacs form)))
 	   (let ((value (caddr (wait-for-event `(:emacs-return ,tag result)))))
 	     (destructure-case value
-	       ((:ok value) value)
+	       ((:ok value)
+                (handler-case (values (read-from-string value))
+                  (reader-error () (make-unreadable-object :string value))))
 	       ((:abort) (abort))))))))
 
 (defvar *swank-wire-protocol-version* nil
@@ -2764,6 +2778,10 @@ TAGS has is a list of strings."
 (define-stepper-function sldb-step sldb-step-into)
 (define-stepper-function sldb-next sldb-step-next)
 (define-stepper-function sldb-out  sldb-step-out)
+
+(defslimefun toggle-break-on-signals ()
+  (setq *break-on-signals* (not *break-on-signals*))
+  (format nil "*break-on-signals* = ~a" *break-on-signals*))
 
 
 ;;;; Compilation Commands.

@@ -895,10 +895,10 @@ Restore window configuration when closed.
 
 NAME is the name of the buffer to be created.
 PACKAGE is the value `slime-buffer-package'.
-CONNECTION is the value for `slime-buffer-connection'.
+CONNECTION is the value for `slime-buffer-connection',
+ if nil, no explicit connection is associated with
+ the buffer.  If t, the current connection is taken.
 MODE is the name of a major mode which will be enabled.
-If nil, no explicit connection is associated with
-the buffer.  If t, the current connection is taken.
 "
   `(let* ((vars% (list ,(if (eq package t) '(slime-current-package) package)
                        ,(if (eq connection t) '(slime-connection) connection)))
@@ -2672,7 +2672,8 @@ to it depending on its sign."
   (with-struct (slime-compilation-result. notes duration successp
                                           loadp faslfile) result
     (setf slime-last-compilation-result result)
-    (slime-show-note-counts notes duration successp)
+    (slime-show-note-counts notes duration (cond ((not loadp) successp)
+                                                 (t (and faslfile successp))))
     (when slime-highlight-compiler-notes
       (slime-highlight-notes notes))
     (run-hook-with-args 'slime-compilation-finished-hook notes)
@@ -3225,7 +3226,8 @@ you should check twice before modifying.")
     (flet ((file-truename-safe (filename) (and filename (file-truename filename))))
       (let ((target-filename (file-truename-safe filename))
             (buffer-filename (file-truename-safe (buffer-file-name))))
-        (when buffer-filename
+        (when (and target-filename
+                   buffer-filename)
           (slime-maybe-warn-for-different-source-root
            target-filename buffer-filename))))))
 
@@ -4016,7 +4018,9 @@ The result is a (possibly empty) list of definitions."
                       (slime-check-eval-in-emacs-enabled)
                       (setq value (eval (read form-string)))
                       (setq ok t))
-      (let ((result (if ok `(:ok ,value) `(:abort))))
+      (let ((result (if ok
+                        `(:ok ,(prin1-to-string value))
+                        `(:abort))))
         (slime-dispatch-event `(:emacs-return ,thread ,tag ,result) c)))))
 
 (defun slime-check-eval-in-emacs-enabled ()
@@ -6067,6 +6071,12 @@ was called originally."
         ((list 'swank:restart-frame number))
       ((:ok value) (message "%s" value))
       ((:abort _)))))
+
+(defun slime-toggle-break-on-signals ()
+  "Toggle the value of *break-on-signals*."
+  (interactive)
+  (slime-eval-async `(swank:toggle-break-on-signals)
+    (lambda (msg) (message "%s" msg))))
 
 
 ;;;;;; SLDB recompilation commands

@@ -365,20 +365,39 @@ Return NIL if the symbol is unbound."
 	(push frame backtrace)))))
 
 (defun frame-actual-args (frame)
-  (let ((*break-on-signals* nil))
-    (mapcar (lambda (arg)
-              (case arg
-                ((&rest &optional &key) arg)
-                (t
-                 (handler-case (dbg::dbg-eval arg frame)
-                   (error (e) (format nil "<~A>" arg))))))
-            (dbg::call-frame-arglist frame))))
+  (let ((*break-on-signals* nil)
+        (kind nil))
+    (loop for arg in (dbg::call-frame-arglist frame)
+          if (eq kind '&rest)
+          nconc (handler-case
+                    (dbg::dbg-eval arg frame)
+                  (error (e) (list (format nil "<~A>" arg))))
+          and do (loop-finish)
+          else
+          if (member arg '(&rest &optional &key))
+          do (setq kind arg)
+          else
+          nconc
+          (handler-case
+              (nconc (and (eq kind '&key)
+                          (list (cond ((symbolp arg)
+                                       (intern (symbol-name arg) :keyword))
+                                      ((and (consp arg) (symbolp (car arg)))
+                                       (intern (symbol-name (car arg)) :keyword))
+                                      (t (caar arg)))))
+                     (list (dbg::dbg-eval
+                            (cond ((symbolp arg) arg)
+                                  ((and (consp arg) (symbolp (car arg)))
+                                   (car arg))
+                                  (t (cadar arg)))
+                            frame)))
+            (error (e) (list (format nil "<~A>" arg)))))))
 
 (defimplementation print-frame (frame stream)
   (cond ((dbg::call-frame-p frame)
-         (format stream "~S ~S"
-                 (dbg::call-frame-function-name frame)
-                 (frame-actual-args frame)))
+         (prin1 (cons (dbg::call-frame-function-name frame)
+                      (frame-actual-args frame))
+                stream))
         (t (princ frame stream))))
 
 (defun frame-vars (frame)
@@ -520,8 +539,10 @@ Return NIL if the symbol is unbound."
 (defun map-error-database (database fn)
   (loop for (filename . defs) in database do
 	(loop for (dspec . conditions) in defs do
-	      (dolist (c conditions) 
-		(funcall fn filename dspec (if (consp c) (car c) c))))))
+	      (dolist (c conditions)
+                (multiple-value-bind (condition path)
+                    (if (consp c) (values (car c) (cdr c)) (values c nil))
+                  (funcall fn filename dspec condition path))))))
 
 (defun lispworks-severity (condition)
   (cond ((not condition) :warning)
@@ -649,23 +670,25 @@ Return NIL if the symbol is unbound."
                       (dspec-function-name-position dspec `(:offset ,offset 0))
                       hints)))))
 
-(defun make-dspec-progenitor-location (dspec location)
+(defun make-dspec-progenitor-location (dspec location edit-path)
   (let ((canon-dspec (dspec:canonicalize-dspec dspec)))
     (make-dspec-location
      (if canon-dspec
          (if (dspec:local-dspec-p canon-dspec)
              (dspec:dspec-progenitor canon-dspec)
-           canon-dspec)
-       nil)
-     location)))
+             canon-dspec)
+         nil)
+     location
+     (if edit-path
+         (list :edit-path (edit-path-to-cmucl-source-path edit-path))))))
 
 (defun signal-error-data-base (database &optional location)
   (map-error-database 
    database
-   (lambda (filename dspec condition)
+   (lambda (filename dspec condition edit-path)
      (signal-compiler-condition
       (format nil "~A" condition)
-      (make-dspec-progenitor-location dspec (or location filename))
+      (make-dspec-progenitor-location dspec (or location filename) edit-path)
       condition))))
 
 (defun unmangle-unfun (symbol)
@@ -680,10 +703,11 @@ function names like \(SETF GET)."
 	     (dolist (dspec dspecs)
 	       (signal-compiler-condition 
 		(format nil "Undefined function ~A" (unmangle-unfun unfun))
-		(make-dspec-progenitor-location dspec
-                                                (or filename
-                                                    (gethash (list unfun dspec)
-                                                             *undefined-functions-hash*)))
+		(make-dspec-progenitor-location 
+                 dspec
+                 (or filename
+                     (gethash (list unfun dspec) *undefined-functions-hash*))
+                 nil)
 		nil)))
 	   htab))
 

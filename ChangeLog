@@ -1,3 +1,64 @@
+2011-02-02  Stas Boukarev  <stassats@gmail.com>
+
+	* swank.lisp (eval-in-emacs): Return unreadable results from Emacs
+	as an unreadable-object, not as a string.
+
+2011-02-02  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-eval-for-lisp): Return value as a string,
+	because it can be unreadable, e.g. #<buffer foo>
+	* swank.lisp (eval-in-emacs): Prevent reader errors.
+
+2011-02-02  Stas Boukarev  <stassats@gmail.com>
+
+	* swank.lisp (eval-in-emacs): Export it.
+
+2011-01-28  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-check-location-filename-sanity): Guard
+	against target-filename being NIL.
+
+2011-01-26  Helmut Eller  <heller@common-lisp.net>
+
+	Allow tail-merging in call-with-bindings.
+
+	* swank.lisp (call-with-bindings): Don't use progv if alist is
+	empty alist is empty.
+
+2011-01-20  Stas Boukarev  <stassats@gmail.com>
+
+	* swank-ecl.lisp (+TAGS+): change
+	(translate-logical-pathname #P"SYS:TAGS") to
+	(merge-pathnames "TAGS" (translate-logical-pathname "SYS:"))
+	because of case conversion the former results in a pathname with a
+	name "tags", which doesn't exist.
+
+2010-12-10  Stas Boukarev  <stassats@gmail.com>
+
+	* slime.el (slime-with-popup-buffer): Correct the docstring.
+
+2010-12-09  Helmut Eller  <heller@common-lisp.net>
+
+	* slime.el (slime-toggle-break-on-signals): New command.
+	* swank.lisp (toggle-break-on-signals): The corresponding Lisp code.
+
+2010-12-02  Martin Simmons  <martin@lispworks.com>
+
+	* swank-lispworks.lisp (frame-actual-args): Reimplement to include
+	only the values like on other platforms and deal with, optional
+	key and rest args.
+	(print-frame): Format the frame as a call like in other backends.
+
+2010-11-13  Helmut Eller  <heller@common-lisp.net>
+
+	Improve source locations for compiler messages in Lispworks.
+
+	* swank-lispworks.lisp (map-error-database)
+	(signal-error-data-base, make-dspec-progenitor-location): Pass the
+	edit-path along.
+	(signal-undefined-functions): No edit-path available so just use
+	nil.
+
 2010-11-12  Helmut Eller  <heller@common-lisp.net>
 
 	Improve frame-source-location for Lispworks.
