@@ -1824,14 +1824,6 @@ converted to lower case."
     (number (let ((*print-base* 10))
               (princ-to-string form)))))
 
-(defstruct (unreadable-object
-             (:print-object
-              (lambda (object stream)
-                (print-unreadable-object (object stream :type t :identity t)
-                  (princ (unreadable-object-string object)
-                         stream)))))
-  string)
-
 (defun eval-in-emacs (form &optional nowait)
   "Eval FORM in Emacs.
 `slime-enable-evaluate-in-emacs' should be set to T on the Emacs side."
@@ -1844,9 +1836,8 @@ converted to lower case."
 				  ,(process-form-for-emacs form)))
 	   (let ((value (caddr (wait-for-event `(:emacs-return ,tag result)))))
 	     (destructure-case value
-	       ((:ok value)
-                (handler-case (values (read-from-string value))
-                  (reader-error () (make-unreadable-object :string value))))
+	       ((:ok value) value)
+               ((:error kind . data) (error "~a: ~{~a~}" kind data))
 	       ((:abort) (abort))))))))
 
 (defvar *swank-wire-protocol-version* nil
@@ -2050,7 +2041,8 @@ considered to represent a symbol internal to some current package.)"
                  (char-upcase char)))))
 
 
-(defun find-symbol-with-status (symbol-name status &optional (package *package*))
+(defun find-symbol-with-status (symbol-name status 
+                                &optional (package *package*))
   (multiple-value-bind (symbol flag) (find-symbol symbol-name package)
     (if (and flag (eq flag status))
         (values symbol flag)
@@ -3346,9 +3338,10 @@ Default implementation call find-source-location.")
 (defslimefun find-definitions-for-emacs (name)
   "Return a list ((DSPEC LOCATION) ...) of definitions for NAME.
 DSPEC is a string and LOCATION a source location. NAME is a string."
-  (multiple-value-bind (sexp error) (ignore-errors (from-string name))
-    (unless error
-      (mapcar #'xref>elisp (find-definitions sexp)))))
+  (multiple-value-bind (symbol found) (with-buffer-syntax () 
+                                        (parse-symbol name))
+    (when found
+      (mapcar #'xref>elisp (find-definitions symbol)))))
 
 ;;; Generic function so contribs can extend it.
 (defgeneric xref-doit (type thing)
